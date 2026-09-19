@@ -9,6 +9,8 @@ import gc
 import inspect
 import itertools
 import sys
+import traceback
+import typing
 
 from operator import attrgetter
 from typing import Generic, TypeVar
@@ -1390,6 +1392,273 @@ class TestConverter:
             "C", {"x": attr.ib(converter=lambda v: int(v))}, frozen=True
         )
         C("1")
+
+    def test_wrapped_takes_self(self):
+        """
+        A Converter with takes_self=True receives the partially initialized
+        instance, so conversion can look at other fields.
+        """
+
+        def converter_with_self(v, self_):
+            return v * self_.y
+
+        @attr.define
+        class C:
+            x: int = attr.field(
+                converter=attr.Converter(converter_with_self, takes_self=True)
+            )
+            y = 42
+
+        assert 84 == C(2).x
+
+    def test_wrapped_takes_field(self):
+        """
+        A Converter with takes_field=True receives the Attribute under
+        construction, allowing access to its metadata.
+        """
+
+        def converter_with_field(v, field):
+            assert isinstance(field, attr.Attribute)
+            return v * field.metadata["x"]
+
+        @attr.define
+        class C:
+            x: int = attr.field(
+                converter=attr.Converter(
+                    converter_with_field, takes_field=True
+                ),
+                metadata={"x": 42},
+            )
+
+        assert 84 == C(2).x
+
+    def test_wrapped_takes_self_and_field(self):
+        """
+        A Converter with both options receives the instance and the field in
+        that order.
+        """
+
+        def converter(v, inst, field):
+            return v + inst.y + field.metadata["x"]
+
+        @attr.define
+        class C:
+            x: int = attr.field(
+                converter=attr.Converter(
+                    converter,
+                    takes_self=True,
+                    takes_field=True,
+                ),
+                metadata={"x": 100},
+            )
+            y = 40
+
+        assert 142 == C(2).x
+
+    def test_wrapped_plain_callable_compat(self):
+        """
+        A Converter without extra options behaves exactly like the wrapped
+        single-argument callable.
+        """
+
+        @attr.define
+        class C:
+            x: int = attr.field(converter=attr.Converter(int))
+
+        assert 42 == C("42").x
+
+    @pytest.mark.parametrize("slots", [True, False])
+    @pytest.mark.parametrize("frozen", [True, False])
+    def test_wrapped_slots_frozen(self, slots, frozen):
+        """
+        Wrapped converters work for all slots/frozen combinations.
+        """
+
+        @attr.define(slots=slots, frozen=frozen)
+        class C:
+            x = attr.field(
+                converter=attr.Converter(
+                    lambda v, inst: v + 1, takes_self=True
+                )
+            )
+
+        assert 42 == C(41).x
+
+    def test_wrapped_factory_default(self):
+        """
+        Wrapped converters are also applied to factory-produced default
+        values, including takes_self factories.
+        """
+
+        @attr.define
+        class C:
+            x = attr.field(
+                default=Factory(lambda self: self.base, takes_self=True),
+                converter=attr.Converter(
+                    lambda v, inst: v * inst.factor, takes_self=True
+                ),
+            )
+            base = 21
+            factor = 2
+
+        assert 42 == C().x
+        assert 8 == C(4).x
+
+    def test_wrapped_init_false_factory(self):
+        """
+        Wrapped converters run for init=False fields with a factory.
+        """
+
+        @attr.define
+        class C:
+            x = attr.field(
+                init=False,
+                default=Factory(lambda: 21),
+                converter=attr.Converter(
+                    lambda v, field: v * field.metadata["x"],
+                    takes_field=True,
+                ),
+                metadata={"x": 2},
+            )
+
+        assert 42 == C().x
+
+    def test_wrapped_inheritance(self):
+        """
+        An inherited converted field keeps receiving its own field metadata.
+        """
+
+        def conv(v, field):
+            return v + field.metadata.get("offset", 0)
+
+        @attr.define
+        class Base:
+            x = attr.field(
+                converter=attr.Converter(conv, takes_field=True),
+                metadata={"offset": 41},
+            )
+
+        @attr.define
+        class Sub(Base):
+            pass
+
+        assert 42 == Sub(1).x
+
+    def test_wrapped_pipe_mixed(self):
+        """
+        A pipe mixing plain and contextual converters passes the instance and
+        field only where requested.
+        """
+        from attr.converters import pipe
+
+        seen = []
+
+        def plain(v):
+            seen.append(("plain", v))
+            return v
+
+        def contextual(v, inst, field):
+            seen.append(("ctx", v, inst, field))
+            return v
+
+        @attr.define
+        class C:
+            x = attr.field(
+                converter=pipe(
+                    plain,
+                    attr.Converter(
+                        contextual, takes_self=True, takes_field=True
+                    ),
+                )
+            )
+
+        c = C(42)
+
+        assert c.x == 42
+        assert seen[0] == ("plain", 42)
+        assert seen[1][:2] == ("ctx", 42)
+        assert seen[1][2] is c
+        assert isinstance(seen[1][3], attr.Attribute)
+
+    def test_wrapped_optional(self):
+        """
+        optional() preserves Converter context passing.
+        """
+        from attr.converters import optional
+
+        @attr.define
+        class C:
+            x = attr.field(
+                default=None,
+                converter=optional(
+                    attr.Converter(
+                        lambda v, inst: None if v is None else v + inst.y,
+                        takes_self=True,
+                    )
+                ),
+            )
+            y = 40
+
+        assert C().x is None
+        assert 42 == C(2).x
+
+    def test_wrapped_on_setattr(self):
+        """
+        Context converters are invoked correctly through on_setattr=convert.
+        """
+
+        @attr.define(on_setattr=attr.setters.convert)
+        class C:
+            x = attr.field(
+                converter=attr.Converter(
+                    lambda v, inst: v + inst.y, takes_self=True
+                )
+            )
+            y = 40
+
+        c = C(2)
+        assert 42 == c.x
+
+        c.x = 2
+        assert 42 == c.x
+
+    def test_wrapped_traceback_not_hidden(self):
+        """
+        Errors raised by the wrapped converter point at the user's callable;
+        the wrapper does not mask it.
+        """
+
+        def boom(v, inst):
+            raise RuntimeError("boom")
+
+        @attr.define
+        class C:
+            x = attr.field(converter=attr.Converter(boom, takes_self=True))
+
+        with pytest.raises(RuntimeError, match="boom") as exc_info:
+            C(1)
+
+        frames = [
+            frame.name
+            for frame in traceback.extract_tb(exc_info.value.__traceback__)
+        ]
+        assert "boom" in frames
+
+    def test_wrapped_type_inference(self):
+        """
+        The __init__ parameter annotation is derived from the wrapped
+        converter's first parameter.
+        """
+
+        def conv(value: str) -> int:
+            return int(value)
+
+        @attr.define
+        class C:
+            x = attr.field(converter=attr.Converter(conv))
+
+        hints = typing.get_type_hints(C.__init__)
+        assert str is hints["x"]
 
 
 class TestValidate:

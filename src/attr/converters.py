@@ -8,7 +8,7 @@ Commonly useful converters.
 import typing
 
 from ._compat import _AnnotationExtractor
-from ._make import NOTHING, Factory, pipe
+from ._make import NOTHING, Converter, Factory, pipe
 
 
 __all__ = [
@@ -34,20 +34,34 @@ def optional(converter):
     .. versionadded:: 17.1.0
     """
 
-    def optional_converter(val):
-        if val is None:
-            return None
-        return converter(val)
+    if isinstance(converter, Converter):
 
-    xtr = _AnnotationExtractor(converter)
+        def optional_converter(val, inst, field):
+            if val is None:
+                return None
+            return converter(val, inst, field)
 
-    t = xtr.get_first_param_type()
+        t = converter._first_param_type
+        rt = converter._return_type
+    else:
+
+        def optional_converter(val):
+            if val is None:
+                return None
+            return converter(val)
+
+        xtr = _AnnotationExtractor(converter)
+        t = xtr.get_first_param_type()
+        rt = xtr.get_return_type()
+
     if t:
         optional_converter.__annotations__["val"] = typing.Optional[t]
 
-    rt = xtr.get_return_type()
     if rt:
         optional_converter.__annotations__["return"] = typing.Optional[rt]
+
+    if isinstance(converter, Converter):
+        return Converter(optional_converter, takes_self=True, takes_field=True)
 
     return optional_converter
 

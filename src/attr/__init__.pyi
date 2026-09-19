@@ -100,6 +100,46 @@ else:
         takes_self: bool = ...,
     ) -> _T: ...
 
+In = TypeVar("In")
+Out = TypeVar("Out")
+
+if sys.version_info >= (3, 8):
+    class Converter(Generic[In, Out]):
+        @overload
+        def __init__(self, converter: Callable[[In], Out]) -> None: ...
+        @overload
+        def __init__(
+            self,
+            converter: Callable[[In, AttrsInstance, "Attribute"], Out],
+            *,
+            takes_self: Literal[True],
+            takes_field: Literal[True],
+        ) -> None: ...
+        @overload
+        def __init__(
+            self,
+            converter: Callable[[In, "Attribute"], Out],
+            *,
+            takes_field: Literal[True],
+        ) -> None: ...
+        @overload
+        def __init__(
+            self,
+            converter: Callable[[In, AttrsInstance], Out],
+            *,
+            takes_self: Literal[True],
+        ) -> None: ...
+
+else:
+    class Converter(Generic[In, Out]):
+        def __init__(
+            self,
+            converter: Callable[..., Out],
+            *,
+            takes_self: bool = ...,
+            takes_field: bool = ...,
+        ) -> None: ...
+
 class Attribute(Generic[_T]):
     name: str
     default: _T | None
@@ -110,7 +150,7 @@ class Attribute(Generic[_T]):
     order: _EqOrderType
     hash: bool | None
     init: bool
-    converter: _ConverterType | None
+    converter: Converter | None
     metadata: dict[Any, Any]
     type: type[_T] | None
     kw_only: bool

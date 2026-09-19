@@ -106,6 +106,12 @@ Core
    Same as `attrs.Factory`.
 
 
+.. autoclass:: Converter
+   :noindex:
+
+   Same as `attrs.Converter`.
+
+
 .. data:: NOTHING
 
    Same as `attrs.NOTHING`.

@@ -94,6 +94,23 @@ Core
       C(x=[1, 2, 3], y={1, 2, 3})
 
 
+.. autoclass:: Converter
+
+   For example:
+
+   .. doctest::
+
+      >>> @define
+      ... class C:
+      ...     x = field(converter=attrs.Converter(
+      ...         lambda value, inst: value * inst.factor,
+      ...         takes_self=True,
+      ...     ))
+      ...     factor = 2
+      >>> C(21)
+      C(x=42)
+
+
 Exceptions
 ----------
 

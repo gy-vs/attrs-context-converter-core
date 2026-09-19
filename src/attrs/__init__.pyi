@@ -3,6 +3,7 @@ import sys
 from typing import (
     Any,
     Callable,
+    Generic,
     Mapping,
     Sequence,
     overload,
@@ -24,6 +25,7 @@ from attr import assoc as assoc
 from attr import Attribute as Attribute
 from attr import AttrsInstance as AttrsInstance
 from attr import cmp_using as cmp_using
+from attr import Converter as Converter
 from attr import converters as converters
 from attr import evolve as evolve
 from attr import exceptions as exceptions
@@ -50,7 +52,8 @@ _C = TypeVar("_C", bound=type)
 
 _EqOrderType = bool | Callable[[Any], Any]
 _ValidatorType = Callable[[Any, "Attribute[_T]", _T], Any]
-_ConverterType = Callable[[Any], Any]
+_CallableConverterType = Callable[[Any], Any]
+_ConverterType = _CallableConverterType | Converter[Any, Any]
 _ReprType = Callable[[Any], str]
 _ReprArgType = bool | _ReprType
 _OnSetAttrType = Callable[[Any, "Attribute[Any]", Any], Any]

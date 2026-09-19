@@ -361,6 +361,36 @@ A converter will override an explicit type annotation or `type` argument.
 {'return': None, 'x': <class 'str'>}
 ```
 
+### Converters with Access to the Instance and Field
+
+Sometimes a converter needs to take other attributes or the field's
+{attr}`metadata <attrs.Attribute.metadata>` into account.
+For those cases, wrap your converter into an {class}`attrs.Converter` and
+declare the additional parameters explicitly:
+
+- If *takes_self* is `True`, the partially initialized instance is passed as
+  the second positional argument.
+- If *takes_field* is `True`, the corresponding {class}`attrs.Attribute` is
+  passed as the third positional argument.
+
+```{doctest}
+>>> import attrs
+>>> @define
+... class C:
+...     x = field(converter=attrs.Converter(
+...         lambda value, inst, field: value * inst.factor * field.metadata["n"],
+...         takes_self=True, takes_field=True,
+...     ), metadata={"n": 2})
+...     factor = 3
+>>> C(7).x
+42
+```
+
+The type annotations are still taken from the wrapped callable's first
+parameter and its return value.
+`attrs.pipe` and `attrs.converters.optional` preserve the wrapping, and a
+plain single-argument callable keeps working without any changes.
+
 
 ## Hooking Yourself Into Initialization
 

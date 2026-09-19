@@ -63,7 +63,13 @@ def convert(instance, attrib, new_value):
     """
     c = attrib.converter
     if c:
-        return c(new_value)
+        # Imported locally to avoid a circular import.
+        from ._make import Converter
+
+        if not isinstance(c, Converter):
+            return c(new_value)
+
+        return c(new_value, instance, attrib)
 
     return new_value
 
