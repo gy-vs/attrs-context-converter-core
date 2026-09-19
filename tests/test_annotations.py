@@ -239,6 +239,21 @@ class TestAnnotations:
 
         assert_init_annotations(A, a=int, b=int)
 
+    def test_converter_wrapped_annotations(self):
+        """
+        A Converter-wrapped annotated converter still passes its first
+        argument's annotation on to __init__.
+        """
+
+        def int2str(x: int, self_) -> str:
+            return str(x)
+
+        @attr.s
+        class A:
+            a = attr.ib(converter=attr.Converter(int2str, takes_self=True))
+
+        assert_init_annotations(A, a=int)
+
     def test_non_introspectable_converter(self):
         """
         A non-introspectable converter doesn't cause a crash.

@@ -109,15 +109,33 @@ class TestSetAttr:
         used. They can be supplied using the pipe functions or by passing a
         list to on_setattr.
         """
+        taken = None
+
+        def takes_all(val, instance, attrib):
+            nonlocal taken
+            taken = val, instance, attrib
+
+            return val
 
         s = [setters.convert, lambda _, __, nv: nv + 1]
 
         @attr.s
         class Piped:
-            x1 = attr.ib(converter=int, on_setattr=setters.pipe(*s))
+            x1 = attr.ib(
+                converter=[
+                    attr.Converter(
+                        takes_all, takes_field=True, takes_self=True
+                    ),
+                    int,
+                ],
+                on_setattr=setters.pipe(*s),
+            )
             x2 = attr.ib(converter=int, on_setattr=s)
 
         p = Piped("41", "22")
+
+        assert ("41", p) == taken[:-1]
+        assert "x1" == taken[-1].name
 
         assert 41 == p.x1
         assert 22 == p.x2

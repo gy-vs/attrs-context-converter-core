@@ -1324,6 +1324,170 @@ class TestConverter:
         assert c.x == 2
         assert c.y == 2
 
+    def test_converter_wrapped_takes_self(self):
+        """
+        When wrapped and passed `takes_self`, the converter receives the
+        instance that's being initializes -- and the return value is used as
+        the field's value.
+        """
+
+        def converter_with_self(v, self_):
+            return v * self_.y
+
+        @attr.define
+        class C:
+            x: int = attr.field(
+                converter=attr.Converter(converter_with_self, takes_self=True)
+            )
+            y = 42
+
+        assert 84 == C(2).x
+
+    def test_converter_wrapped_takes_field(self):
+        """
+        When wrapped and passed `takes_field`, the converter receives the field
+        definition -- and the return value is used as the field's value.
+        """
+
+        def converter_with_field(v, field):
+            assert isinstance(field, attr.Attribute)
+            return v * field.metadata["x"]
+
+        @attr.define
+        class C:
+            x: int = attr.field(
+                converter=attr.Converter(
+                    converter_with_field, takes_field=True
+                ),
+                metadata={"x": 42},
+            )
+
+        assert 84 == C(2).x
+
+    def test_converter_wrapped_takes_self_and_field(self):
+        """
+        When wrapped and passed both `takes_self` and `takes_field`, the
+        converter receives the instance and the field definition, in that
+        order.
+        """
+
+        def converter_with_all(v, self_, field):
+            return v * self_.y + field.metadata["offset"]
+
+        @attr.define
+        class C:
+            y = 40
+            x: int = attr.field(
+                converter=attr.Converter(
+                    converter_with_all, takes_self=True, takes_field=True
+                ),
+                metadata={"offset": 2},
+            )
+
+        assert 82 == C(2).x
+
+    @pytest.mark.parametrize("slots", [True, False])
+    def test_converter_wrapped_frozen(self, slots):
+        """
+        Wrapped converters work on frozen classes, with and without slots.
+        """
+
+        def converter_with_self(v, self_):
+            return v * self_.y
+
+        @attr.s(frozen=True, slots=slots)
+        class C:
+            y = attr.ib(default=6)
+            x = attr.ib(
+                default=1,
+                converter=attr.Converter(converter_with_self, takes_self=True),
+            )
+
+        assert 42 == C(7, 6).x
+        assert 6 == C().x
+
+    def test_converter_wrapped_inherited(self):
+        """
+        Wrapped converters keep working when the attribute is inherited by a
+        subclass, and receive the subclass instance.
+        """
+
+        def converter_with_self(v, self_):
+            return v * self_.y
+
+        @attr.define
+        class Base:
+            y: int = attr.field(default=3)
+            x: int = attr.field(
+                default=1,
+                converter=attr.Converter(converter_with_self, takes_self=True),
+            )
+
+        @attr.define
+        class Sub(Base):
+            z: int = attr.field(default=10)
+
+        s = Sub(x=4)
+
+        assert 12 == s.x
+        assert 10 == s.z
+
+    def test_converter_wrapped_factory(self):
+        """
+        Wrapped converters are also run on factory-produced default values and
+        receive the partially initialized instance.
+        """
+
+        @attr.define
+        class C:
+            y = attr.field(default=4)
+            x = attr.field(
+                factory=lambda: "5",
+                converter=attr.Converter(
+                    lambda v, self_: int(v) * self_.y, takes_self=True
+                ),
+            )
+
+        assert 20 == C().x
+        assert 8 == C(x="2").x
+
+    def test_converter_wrapped_factory_takes_self(self):
+        """
+        Wrapped converters compose with factories that themselves take self:
+        the factory runs first, its result is converted.
+        """
+
+        @attr.define
+        class C:
+            y = attr.field(default=3)
+            x = attr.field(
+                default=Factory(lambda self: self.y * 2, takes_self=True),
+                converter=attr.Converter(
+                    lambda v, self_: v + self_.y, takes_self=True
+                ),
+            )
+
+        assert 9 == C().x
+
+    def test_converter_wrapped_error_traceback(self):
+        """
+        If a wrapped converter raises, the original exception propagates and
+        the wrapped callable is visible in the traceback -- it is not hidden
+        behind wrapper frames.
+        """
+
+        def raiser(v):
+            raise ValueError("original error")
+
+        @attr.s
+        class C:
+            x = attr.ib(converter=attr.Converter(raiser))
+
+        with pytest.raises(ValueError, match="original error") as ei:
+            C(1)
+
+        assert "raiser" in {frame.name for frame in ei.traceback}
+
     @given(integers(), booleans())
     def test_convert_property(self, val, init):
         """

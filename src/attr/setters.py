@@ -63,7 +63,13 @@ def convert(instance, attrib, new_value):
     """
     c = attrib.converter
     if c:
-        return c(new_value)
+        # This can be removed once we drop 3.8 and use attrs.Converter instead.
+        from ._make import Converter
+
+        if not isinstance(c, Converter):
+            return c(new_value)
+
+        return c(new_value, instance, attrib)
 
     return new_value
 

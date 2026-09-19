@@ -202,6 +202,7 @@ ignore = [
   "E501",    # leave line-length enforcement to Black
   "FBT",     # we don't hate bool args around here
   "FIX",     # Yes, we want XXX as a marker.
+  "PLC0415", # sometimes, imports have to live elsewhere
   "PLR0913", # yes, many arguments, but most have defaults
   "PLR2004", # numbers are sometimes fine
   "SLF001",  # private members are accessed by friendly functions
